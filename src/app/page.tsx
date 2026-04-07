@@ -1,157 +1,160 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
-import { SearchBar } from '@/components/SearchBar';
-import { MediaCard } from '@/components/MediaCard';
-import { Clapperboard, Sparkles } from 'lucide-react';
-import type { TmdbResult } from '@/lib/tmdb';
+import { useState, useEffect, useCallback } from 'react';
+import { WatchlistItem } from '@/components/WatchlistItem';
+import { FilterTabs } from '@/components/FilterTabs';
+import { BookMarked, Inbox } from 'lucide-react';
+import Link from 'next/link';
 import type { WatchStatus } from '@/db/schema';
 
-export default function HomePage() {
-  const [results, setResults] = useState<TmdbResult[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [hasSearched, setHasSearched] = useState(false);
-  // Set of "tmdbId-mediaType" strings for items already in watchlist
-  const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
+type FilterValue = 'all' | WatchStatus;
 
-  // Load current watchlist IDs on mount
-  useEffect(() => {
-    fetch('/api/watchlist')
-      .then((r) => r.json())
-      .then((data) => {
-        const ids = new Set<string>(
-          (data.items ?? []).map(
-            (item: { tmdbId: number; mediaType: string }) =>
-              `${item.tmdbId}-${item.mediaType}`
-          )
-        );
-        setWatchlistIds(ids);
-      })
-      .catch(() => {});
+interface WatchlistItemData {
+  id: number;
+  tmdbId: number;
+  mediaType: 'movie' | 'tv';
+  title: string;
+  posterPath: string | null;
+  overview: string | null;
+  rating: number | null;
+  genres: string[];
+  year: string | null;
+  status: WatchStatus;
+  addedAt: Date | null;
+  watchedAt: Date | null;
+}
+
+export default function HomePage() {
+  const [allItems, setAllItems] = useState<WatchlistItemData[]>([]);
+  const [activeFilter, setActiveFilter] = useState<FilterValue>('all');
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchWatchlist = useCallback(async () => {
+    try {
+      const res = await fetch('/api/watchlist');
+      const data = await res.json();
+      setAllItems(data.items ?? []);
+    } catch {
+      // silent fail — list stays as-is
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  const handleSearch = useCallback(
-    async (query: string, type: 'multi' | 'movie' | 'tv') => {
-      setIsLoading(true);
-      setError(null);
-      setHasSearched(true);
+  useEffect(() => {
+    fetchWatchlist();
+  }, [fetchWatchlist]);
 
-      try {
-        const res = await fetch(
-          `/api/search?q=${encodeURIComponent(query)}&type=${type}`
-        );
-        const data = await res.json();
-
-        if (!res.ok) {
-          setError(data.error ?? 'Search failed');
-          setResults([]);
-        } else {
-          setResults(data.results ?? []);
-        }
-      } catch {
-        setError('Network error. Please try again.');
-        setResults([]);
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    []
-  );
-
-  const handleAdd = useCallback(
-    async (item: TmdbResult, status: WatchStatus) => {
-      const res = await fetch('/api/watchlist', {
-        method: 'POST',
+  const handleStatusChange = useCallback(
+    async (id: number, status: WatchStatus) => {
+      const res = await fetch(`/api/watchlist/${id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tmdbId: item.tmdbId,
-          mediaType: item.mediaType,
-          title: item.title,
-          posterPath: item.posterPath,
-          overview: item.overview,
-          rating: item.rating,
-          genres: item.genres,
-          year: item.year,
-          status,
-        }),
+        body: JSON.stringify({ status }),
       });
 
-      if (res.ok || res.status === 409) {
-        setWatchlistIds((prev) =>
-          new Set([...prev, `${item.tmdbId}-${item.mediaType}`])
-        );
+      if (res.ok) {
+        const { item } = await res.json();
+        setAllItems((prev) => prev.map((i) => (i.id === id ? item : i)));
       }
     },
     []
   );
 
+  const handleRemove = useCallback(async (id: number) => {
+    const res = await fetch(`/api/watchlist/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setAllItems((prev) => prev.filter((i) => i.id !== id));
+    }
+  }, []);
+
+  const filteredItems =
+    activeFilter === 'all'
+      ? allItems
+      : allItems.filter((i) => i.status === activeFilter);
+
+  const counts: Record<FilterValue, number> = {
+    all: allItems.length,
+    plan_to_watch: allItems.filter((i) => i.status === 'plan_to_watch').length,
+    watching: allItems.filter((i) => i.status === 'watching').length,
+    watched: allItems.filter((i) => i.status === 'watched').length,
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-10">
-      {/* Hero section */}
-      <section className="text-center space-y-6 pt-4">
-        <div className="space-y-3">
-          <div className="flex items-center justify-center gap-2 text-primary">
-            <Sparkles className="size-5" />
-            <span className="text-sm font-medium uppercase tracking-widest">
-              Your personal library
-            </span>
-            <Sparkles className="size-5" />
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-primary/10">
+            <BookMarked className="size-5 text-primary" />
           </div>
-          <h1 className="text-4xl sm:text-5xl font-bold tracking-tight">
-            Discover & Track
-            <span className="text-primary"> Movies </span>
-            and
-            <span className="text-primary"> TV Shows</span>
-          </h1>
-          <p className="text-muted-foreground text-lg max-w-md mx-auto">
-            Search millions of titles, build your watchlist, and never lose
-            track of what to watch next.
-          </p>
+          <div>
+            <h1 className="text-2xl font-bold">My Watchlist</h1>
+            <p className="text-sm text-muted-foreground">
+              {allItems.length} title{allItems.length !== 1 ? 's' : ''}
+              {counts.watched > 0 && ` · ${counts.watched} watched`}
+              {counts.watching > 0 && ` · ${counts.watching} watching`}
+            </p>
+          </div>
         </div>
+      </div>
 
-        <SearchBar onSearch={handleSearch} isLoading={isLoading} />
-      </section>
-
-      {/* Results */}
-      {error && (
-        <div className="text-center py-8 text-destructive">{error}</div>
+      {/* Filter tabs */}
+      {allItems.length > 0 && (
+        <FilterTabs
+          activeFilter={activeFilter}
+          onChange={setActiveFilter}
+          counts={counts}
+        />
       )}
 
-      {hasSearched && !isLoading && results.length === 0 && !error && (
-        <div className="text-center py-16 space-y-3">
-          <Clapperboard className="size-12 mx-auto text-muted-foreground/30" />
+      {/* Empty states */}
+      {allItems.length === 0 && (
+        <div className="text-center py-24 space-y-4">
+          <div className="p-4 rounded-full bg-primary/10 w-fit mx-auto">
+            <Inbox className="size-10 text-primary/50" />
+          </div>
+          <div>
+            <p className="font-medium text-lg">Your watchlist is empty</p>
+            <p className="text-muted-foreground text-sm mt-1">
+              <Link href="/search" className="text-primary hover:underline">
+                Search for movies or TV shows
+              </Link>{' '}
+              and add them to get started
+            </p>
+          </div>
+        </div>
+      )}
+
+      {allItems.length > 0 && filteredItems.length === 0 && (
+        <div className="text-center py-16 space-y-2">
+          <Inbox className="size-10 mx-auto text-muted-foreground/30" />
           <p className="text-muted-foreground">
-            No results found. Try a different search term.
+            No items in this category yet
           </p>
         </div>
       )}
 
-      {!hasSearched && (
-        <div className="text-center py-16 space-y-3">
-          <Clapperboard className="size-16 mx-auto text-primary/20" />
-          <p className="text-muted-foreground text-lg">
-            Start typing to search for movies and TV shows
-          </p>
+      {/* Items list */}
+      {filteredItems.length > 0 && (
+        <div className="space-y-3">
+          {filteredItems.map((item) => (
+            <WatchlistItem
+              key={item.id}
+              item={item}
+              onStatusChange={handleStatusChange}
+              onRemove={handleRemove}
+            />
+          ))}
         </div>
-      )}
-
-      {results.length > 0 && (
-        <section className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            {results.length} result{results.length !== 1 ? 's' : ''} found
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {results.map((item) => (
-              <MediaCard
-                key={`${item.tmdbId}-${item.mediaType}`}
-                item={item}
-                onAdd={handleAdd}
-                isAdded={watchlistIds.has(`${item.tmdbId}-${item.mediaType}`)}
-              />
-            ))}
-          </div>
-        </section>
       )}
     </div>
   );

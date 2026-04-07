@@ -20,14 +20,14 @@ export function Navbar() {
   const navLinks = [
     {
       href: '/',
-      label: 'Search',
-      icon: <Search className="size-4" />,
-    },
-    {
-      href: '/watchlist',
       label: 'Watchlist',
       icon: <BookMarked className="size-4" />,
       badge: watchlistCount,
+    },
+    {
+      href: '/search',
+      label: 'Search',
+      icon: <Search className="size-4" />,
     },
   ];
 
