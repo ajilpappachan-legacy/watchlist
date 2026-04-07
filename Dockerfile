@@ -17,6 +17,10 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+# Disable Turbopack for builds — can hang on memory-constrained servers
+ENV TURBOPACK=0
+# Give Node more heap for the build step
+ENV NODE_OPTIONS="--max-old-space-size=2048"
 
 # Dummy API key at build time (not used during build, only at runtime)
 ENV TMDB_API_KEY=build_placeholder
