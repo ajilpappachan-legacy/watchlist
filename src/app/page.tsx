@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { WatchlistItem } from '@/components/WatchlistItem';
 import { FilterTabs } from '@/components/FilterTabs';
 import { BookMarked, Inbox } from 'lucide-react';
@@ -28,6 +28,8 @@ export default function HomePage() {
   const [allItems, setAllItems] = useState<WatchlistItemData[]>([]);
   const [activeFilter, setActiveFilter] = useState<FilterValue>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const draggedId = useRef<number | null>(null);
+  const [dragOverId, setDragOverId] = useState<number | null>(null);
 
   const fetchWatchlist = useCallback(async () => {
     try {
@@ -66,6 +68,45 @@ export default function HomePage() {
     if (res.ok) {
       setAllItems((prev) => prev.filter((i) => i.id !== id));
     }
+  }, []);
+
+  const handleDragStart = useCallback((id: number) => {
+    draggedId.current = id;
+  }, []);
+
+  const handleDragEnter = useCallback((id: number) => {
+    if (draggedId.current !== id) setDragOverId(id);
+  }, []);
+
+  const handleDrop = useCallback(() => {
+    const fromId = draggedId.current;
+    const toId = dragOverId;
+    if (fromId === null || toId === null || fromId === toId) return;
+
+    setAllItems((prev) => {
+      const next = [...prev];
+      const fromIdx = next.findIndex((i) => i.id === fromId);
+      const toIdx = next.findIndex((i) => i.id === toId);
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+
+      // Persist in the background — don't await so UI stays snappy
+      fetch('/api/watchlist/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderedIds: next.map((i) => i.id) }),
+      }).catch(() => {});
+
+      return next;
+    });
+
+    draggedId.current = null;
+    setDragOverId(null);
+  }, [dragOverId]);
+
+  const handleDragEnd = useCallback(() => {
+    draggedId.current = null;
+    setDragOverId(null);
   }, []);
 
   const filteredItems =
@@ -152,6 +193,13 @@ export default function HomePage() {
               item={item}
               onStatusChange={handleStatusChange}
               onRemove={handleRemove}
+              draggable={activeFilter === 'all'}
+              isDragging={draggedId.current === item.id}
+              isDragOver={dragOverId === item.id}
+              onDragStart={() => handleDragStart(item.id)}
+              onDragEnter={() => handleDragEnter(item.id)}
+              onDrop={handleDrop}
+              onDragEnd={handleDragEnd}
             />
           ))}
         </div>

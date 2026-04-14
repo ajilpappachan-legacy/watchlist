@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { StatusBadge } from '@/components/StatusBadge';
-import { Trash2, Star, Film, Tv, Calendar } from 'lucide-react';
+import { Trash2, Star, Film, Tv, Calendar, GripVertical } from 'lucide-react';
 import { TMDB_IMG_BASE } from '@/lib/tmdb';
 import type { WatchStatus } from '@/db/schema';
 
@@ -36,6 +36,13 @@ interface Props {
   item: WatchlistItemData;
   onStatusChange: (id: number, status: WatchStatus) => Promise<void>;
   onRemove: (id: number) => Promise<void>;
+  draggable?: boolean;
+  isDragging?: boolean;
+  isDragOver?: boolean;
+  onDragStart?: () => void;
+  onDragEnter?: () => void;
+  onDrop?: () => void;
+  onDragEnd?: () => void;
 }
 
 const STATUS_OPTIONS: { value: WatchStatus; label: string }[] = [
@@ -53,7 +60,18 @@ function formatDate(date: Date | null): string {
   });
 }
 
-export function WatchlistItem({ item, onStatusChange, onRemove }: Props) {
+export function WatchlistItem({
+  item,
+  onStatusChange,
+  onRemove,
+  draggable: isDraggable = false,
+  isDragging = false,
+  isDragOver = false,
+  onDragStart,
+  onDragEnter,
+  onDrop,
+  onDragEnd,
+}: Props) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -84,9 +102,38 @@ export function WatchlistItem({ item, onStatusChange, onRemove }: Props) {
   };
 
   return (
-    <Card className="border-border/50 hover:border-primary/30 transition-all duration-200 bg-card">
+    <Card
+      draggable={isDraggable}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        // Replace the default full-card ghost with a compact title pill
+        const ghost = document.createElement('div');
+        ghost.textContent = item.title;
+        ghost.style.cssText =
+          'position:fixed;top:-200px;padding:6px 14px;border-radius:9999px;font-size:13px;font-weight:500;white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis;background:#6d28d9;color:#fff;box-shadow:0 4px 12px rgba(0,0,0,0.3)';
+        document.body.appendChild(ghost);
+        e.dataTransfer.setDragImage(ghost, ghost.offsetWidth / 2, 20);
+        requestAnimationFrame(() => ghost.remove());
+        onDragStart?.();
+      }}
+      onDragEnter={(e) => { e.preventDefault(); onDragEnter?.(); }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => { e.preventDefault(); onDrop?.(); }}
+      onDragEnd={onDragEnd}
+      className={`border-border/50 transition-all duration-200 bg-card
+        ${isDraggable ? 'cursor-default' : ''}
+        ${isDragging ? 'opacity-40 scale-[0.98]' : 'hover:border-primary/30'}
+        ${isDragOver ? 'border-primary ring-1 ring-primary/40' : ''}
+      `}
+    >
       <CardContent className="p-4">
         <div className="flex gap-4">
+          {/* Drag handle */}
+          {isDraggable && (
+            <div className="flex items-center shrink-0 -ml-1 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground transition-colors">
+              <GripVertical className="size-4" />
+            </div>
+          )}
           {/* Poster */}
           <div className="relative shrink-0 w-16 h-24 rounded-md overflow-hidden bg-muted">
             {posterUrl ? (

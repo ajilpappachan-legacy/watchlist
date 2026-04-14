@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { watchlistItems } from '@/db/schema';
 import type { WatchStatus } from '@/db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, asc, sql, max } from 'drizzle-orm';
 
 export async function GET(req: NextRequest) {
   const status = req.nextUrl.searchParams.get('status') as WatchStatus | null;
@@ -11,7 +11,8 @@ export async function GET(req: NextRequest) {
     const query = db
       .select()
       .from(watchlistItems)
-      .orderBy(desc(watchlistItems.addedAt));
+      // NULL sort_order items (pre-DnD) sink to the bottom, then by addedAt
+      .orderBy(sql`${watchlistItems.sortOrder} IS NULL`, asc(watchlistItems.sortOrder), desc(watchlistItems.addedAt));
 
     const rows = status
       ? await query.where(eq(watchlistItems.status, status))
@@ -60,6 +61,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const [{ maxOrder }] = await db
+      .select({ maxOrder: max(watchlistItems.sortOrder) })
+      .from(watchlistItems);
+
     const inserted = await db
       .insert(watchlistItems)
       .values({
@@ -72,6 +77,7 @@ export async function POST(req: NextRequest) {
         genres: genres ? JSON.stringify(genres) : null,
         year: year ?? null,
         status: status ?? 'plan_to_watch',
+        sortOrder: (maxOrder ?? -1) + 1,
         addedAt: new Date(),
       })
       .returning();

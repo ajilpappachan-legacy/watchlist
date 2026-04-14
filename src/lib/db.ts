@@ -36,11 +36,19 @@ if (!globalForDb.db) {
       genres TEXT,
       year TEXT,
       status TEXT NOT NULL DEFAULT 'plan_to_watch' CHECK(status IN ('plan_to_watch', 'watching', 'watched')),
+      sort_order INTEGER,
       added_at INTEGER,
       watched_at INTEGER,
       UNIQUE(tmdb_id, media_type)
     )
   `);
+
+  // Migrate existing databases that predate the sort_order column
+  try {
+    sqlite.exec('ALTER TABLE watchlist_items ADD COLUMN sort_order INTEGER');
+  } catch {
+    // Column already exists — safe to ignore
+  }
 
   globalForDb.db = drizzle(sqlite, { schema });
 }

@@ -17,6 +17,7 @@ export const watchlistItems = sqliteTable(
     })
       .notNull()
       .default('plan_to_watch'),
+    sortOrder: integer('sort_order'),
     addedAt: integer('added_at', { mode: 'timestamp' }).$defaultFn(
       () => new Date()
     ),
