@@ -30,6 +30,7 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(true);
   const draggedId = useRef<number | null>(null);
   const [dragOverId, setDragOverId] = useState<number | null>(null);
+  const scrollSpeed = useRef(0);
 
   const fetchWatchlist = useCallback(async () => {
     try {
@@ -46,6 +47,38 @@ export default function HomePage() {
   useEffect(() => {
     fetchWatchlist();
   }, [fetchWatchlist]);
+
+  // Auto-scroll the page when dragging near the top or bottom edge
+  useEffect(() => {
+    const ZONE = 80;   // px from viewport edge that triggers scrolling
+    const MAX  = 14;   // max px scrolled per frame
+
+    const onDragOver = (e: DragEvent) => {
+      if (draggedId.current === null) { scrollSpeed.current = 0; return; }
+      const y = e.clientY;
+      const h = window.innerHeight;
+      if (y < ZONE) {
+        scrollSpeed.current = -MAX * (1 - y / ZONE);
+      } else if (y > h - ZONE) {
+        scrollSpeed.current =  MAX * (1 - (h - y) / ZONE);
+      } else {
+        scrollSpeed.current = 0;
+      }
+    };
+
+    let rafId: number;
+    const tick = () => {
+      if (scrollSpeed.current !== 0) window.scrollBy(0, scrollSpeed.current);
+      rafId = requestAnimationFrame(tick);
+    };
+
+    window.addEventListener('dragover', onDragOver);
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      window.removeEventListener('dragover', onDragOver);
+      cancelAnimationFrame(rafId);
+    };
+  }, []);
 
   const handleStatusChange = useCallback(
     async (id: number, status: WatchStatus) => {
@@ -106,6 +139,7 @@ export default function HomePage() {
 
   const handleDragEnd = useCallback(() => {
     draggedId.current = null;
+    scrollSpeed.current = 0;
     setDragOverId(null);
   }, []);
 
