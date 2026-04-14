@@ -13,6 +13,17 @@ export interface TmdbResult {
   genres: string[];
 }
 
+export interface SearchOptions {
+  language?: string;
+  year?: string;
+}
+
+export interface TmdbLanguage {
+  iso_639_1: string;
+  english_name: string;
+  name: string;
+}
+
 interface GenreMap {
   movie: Map<number, string>;
   tv: Map<number, string>;
@@ -112,12 +123,48 @@ class TmdbService {
     };
   }
 
-  async searchMulti(query: string): Promise<TmdbResult[]> {
+  async findByImdbId(imdbId: string): Promise<TmdbResult[]> {
     const genres = await this.getGenres();
-    const data = await this.fetchApi<{ results: any[] }>('/search/multi', { // eslint-disable-line @typescript-eslint/no-explicit-any
-      query,
-      include_adult: 'false',
-    });
+    const data = await this.fetchApi<{
+      movie_results: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      tv_results: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    }>(`/find/${encodeURIComponent(imdbId)}`, { external_source: 'imdb_id' });
+
+    return [
+      ...data.movie_results.map((r) => this.mapMovie(r, genres.movie)),
+      ...data.tv_results.map((r) => this.mapTv(r, genres.tv)),
+    ];
+  }
+
+  async getLanguages(): Promise<TmdbLanguage[]> {
+    const raw = await this.fetchApi<TmdbLanguage[]>('/configuration/languages');
+    return raw
+      .filter((l) => l.iso_639_1 && l.english_name)
+      .sort((a, b) => a.english_name.localeCompare(b.english_name));
+  }
+
+  async searchMulti(query: string, options: SearchOptions = {}): Promise<TmdbResult[]> {
+    const genres = await this.getGenres();
+    const params: Record<string, string> = { query, include_adult: 'false' };
+    if (options.language) params.language = options.language;
+
+    // If year is specified, run movie + tv searches (multi endpoint doesn't support year)
+    if (options.year) {
+      const [movies, tv] = await Promise.all([
+        this.searchMovies(query, options),
+        this.searchTv(query, options),
+      ]);
+      // Merge and deduplicate by tmdbId+mediaType, sort by rating desc
+      const seen = new Set<string>();
+      return [...movies, ...tv].filter((r) => {
+        const key = `${r.tmdbId}-${r.mediaType}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).sort((a, b) => b.rating - a.rating);
+    }
+
+    const data = await this.fetchApi<{ results: any[] }>('/search/multi', params); // eslint-disable-line @typescript-eslint/no-explicit-any
 
     return data.results
       .filter((r) => r.media_type === 'movie' || r.media_type === 'tv')
@@ -128,22 +175,42 @@ class TmdbService {
       );
   }
 
-  async searchMovies(query: string): Promise<TmdbResult[]> {
+  async searchMovies(query: string, options: SearchOptions = {}): Promise<TmdbResult[]> {
     const genres = await this.getGenres();
-    const data = await this.fetchApi<{ results: any[] }>('/search/movie', { // eslint-disable-line @typescript-eslint/no-explicit-any
-      query,
-      include_adult: 'false',
-    });
-    return data.results.map((r) => this.mapMovie(r, genres.movie));
+    const params: Record<string, string> = { query, include_adult: 'false' };
+    if (options.language) params.language = options.language;
+    if (options.year) params.primary_release_year = options.year;
+
+    const [page1, page2] = await Promise.all([
+      this.fetchApi<{ results: any[] }>('/search/movie', { ...params, page: '1' }), // eslint-disable-line @typescript-eslint/no-explicit-any
+      options.year
+        ? this.fetchApi<{ results: any[] }>('/search/movie', { ...params, page: '2' }) // eslint-disable-line @typescript-eslint/no-explicit-any
+        : Promise.resolve({ results: [] }),
+    ]);
+
+    const seen = new Set<number>();
+    return [...page1.results, ...page2.results]
+      .filter((r) => { if (seen.has(r.id)) return false; seen.add(r.id); return true; })
+      .map((r) => this.mapMovie(r, genres.movie));
   }
 
-  async searchTv(query: string): Promise<TmdbResult[]> {
+  async searchTv(query: string, options: SearchOptions = {}): Promise<TmdbResult[]> {
     const genres = await this.getGenres();
-    const data = await this.fetchApi<{ results: any[] }>('/search/tv', { // eslint-disable-line @typescript-eslint/no-explicit-any
-      query,
-      include_adult: 'false',
-    });
-    return data.results.map((r) => this.mapTv(r, genres.tv));
+    const params: Record<string, string> = { query, include_adult: 'false' };
+    if (options.language) params.language = options.language;
+    if (options.year) params.first_air_date_year = options.year;
+
+    const [page1, page2] = await Promise.all([
+      this.fetchApi<{ results: any[] }>('/search/tv', { ...params, page: '1' }), // eslint-disable-line @typescript-eslint/no-explicit-any
+      options.year
+        ? this.fetchApi<{ results: any[] }>('/search/tv', { ...params, page: '2' }) // eslint-disable-line @typescript-eslint/no-explicit-any
+        : Promise.resolve({ results: [] }),
+    ]);
+
+    const seen = new Set<number>();
+    return [...page1.results, ...page2.results]
+      .filter((r) => { if (seen.has(r.id)) return false; seen.add(r.id); return true; })
+      .map((r) => this.mapTv(r, genres.tv));
   }
 }
 

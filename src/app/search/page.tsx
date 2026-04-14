@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { SearchBar } from '@/components/SearchBar';
+import { SearchBar, SearchFilters } from '@/components/SearchBar';
 import { MediaCard } from '@/components/MediaCard';
 import { Clapperboard, Search } from 'lucide-react';
 import type { TmdbResult } from '@/lib/tmdb';
@@ -32,15 +32,16 @@ export default function SearchPage() {
   }, []);
 
   const handleSearch = useCallback(
-    async (query: string, type: 'multi' | 'movie' | 'tv') => {
+    async (query: string, filters: SearchFilters) => {
       setIsLoading(true);
       setError(null);
       setHasSearched(true);
 
       try {
-        const res = await fetch(
-          `/api/search?q=${encodeURIComponent(query)}&type=${type}`
-        );
+        const params = new URLSearchParams({ q: query, type: filters.type });
+        if (filters.language) params.set('language', filters.language);
+        if (filters.year) params.set('year', filters.year);
+        const res = await fetch(`/api/search?${params.toString()}`);
         const data = await res.json();
 
         if (!res.ok) {
